@@ -488,6 +488,15 @@ class MangaLibraryScreenModel(
     }
 
     /**
+     * Force synchronization of the download cache
+     */
+    fun refreshDownloads() {
+        screenModelScope.launchIO {
+            downloadCache.invalidateCache()
+        }
+    }
+
+    /**
      * Marks mangas' chapters read status.
      */
     fun markReadSelection(read: Boolean) {

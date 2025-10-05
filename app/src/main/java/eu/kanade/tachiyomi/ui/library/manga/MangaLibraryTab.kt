@@ -151,6 +151,7 @@ data object MangaLibraryTab : Tab {
                             state.categories[screenModel.activeCategoryIndex],
                         )
                     },
+                    onClickRefreshDownloads = screenModel::refreshDownloads,
                     onClickGlobalUpdate = { onClickRefresh(null) },
                     onClickOpenRandomEntry = {
                         scope.launch {
@@ -164,6 +165,7 @@ data object MangaLibraryTab : Tab {
                             }
                         }
                     },
+
                     searchQuery = state.searchQuery,
                     onSearchQueryChange = screenModel::search,
                     scrollBehavior = scrollBehavior.takeIf { !tabVisible }, // For scroll overlay when no tab

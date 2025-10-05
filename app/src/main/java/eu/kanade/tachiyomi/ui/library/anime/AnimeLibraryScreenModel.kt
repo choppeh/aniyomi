@@ -502,6 +502,15 @@ class AnimeLibraryScreenModel(
     }
 
     /**
+     * Force synchronization of the download cache
+     */
+    fun refreshDownloads() {
+        screenModelScope.launchIO {
+            downloadCache.invalidateCache()
+        }
+    }
+
+    /**
      * Marks animes' episodes seen status.
      */
     fun markSeenSelection(seen: Boolean) {
