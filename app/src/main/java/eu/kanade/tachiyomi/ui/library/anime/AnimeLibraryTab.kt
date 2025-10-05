@@ -144,6 +144,7 @@ data object AnimeLibraryTab : Tab {
                             state.categories[screenModel.activeCategoryIndex],
                         )
                     },
+                    onClickRefreshDownloads = screenModel::refreshDownloads,
                     onClickGlobalUpdate = { onClickRefresh(null) },
                     onClickOpenRandomEntry = {
                         scope.launch {
