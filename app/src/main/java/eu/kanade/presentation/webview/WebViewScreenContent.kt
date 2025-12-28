@@ -115,7 +115,7 @@ fun WebViewScreenContent(
                     }
 
                     val ignoreUriSchema = listOf("intent://", "market://", "data:text/html")
-                    if(ignoreUriSchema.any { schema -> it.url.toString().startsWith(schema)}) {
+                    if (ignoreUriSchema.any { schema -> it.url.toString().startsWith(schema) }) {
                         return true
                     }
 
