@@ -30,6 +30,7 @@
     <string name="action_remove_bookmark">Remover capítulo dos favoritos</string>
     <string name="action_delete">Remover</string>
     <string name="action_update_library">Atualizar biblioteca</string>
+    <string name="action_check_downloads">Verificar downloads</string>
     <string name="action_edit">Editar</string>
     <string name="action_add">Adicionar</string>
     <string name="action_add_category">Adicionar categoria</string>
@@ -52,6 +53,7 @@
     <string name="action_sort">Ordenar</string>
     <string name="action_install">Instalar</string>
     <string name="action_share">Compartilhar</string>
+    <string name="action_mark_as_completed">Marcar como concluído</string>
     <string name="action_save">Salvar</string>
     <string name="action_reset">Redefinir</string>
     <string name="action_undo">Desfazer</string>

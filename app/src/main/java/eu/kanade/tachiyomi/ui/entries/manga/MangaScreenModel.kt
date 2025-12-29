@@ -38,6 +38,7 @@ import eu.kanade.tachiyomi.data.track.EnhancedMangaTracker
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.network.HttpException
 import eu.kanade.tachiyomi.source.MangaSource
+import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.ui.reader.setting.ReaderPreferences
 import eu.kanade.tachiyomi.util.chapter.getNextUnread
 import eu.kanade.tachiyomi.util.removeCovers
@@ -73,6 +74,8 @@ import tachiyomi.domain.entries.manga.interactor.GetDuplicateLibraryManga
 import tachiyomi.domain.entries.manga.interactor.GetMangaWithChapters
 import tachiyomi.domain.entries.manga.interactor.SetMangaChapterFlags
 import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.domain.entries.manga.model.MangaUpdate
+import tachiyomi.domain.entries.manga.model.toMangaUpdate
 import tachiyomi.domain.entries.manga.repository.MangaRepository
 import tachiyomi.domain.items.chapter.interactor.SetMangaDefaultChapterFlags
 import tachiyomi.domain.items.chapter.interactor.UpdateChapter
@@ -287,6 +290,22 @@ class MangaScreenModel(
             screenModelScope.launch {
                 snackbarHostState.showSnackbar(message = with(context) { e.formattedMessage })
             }
+        }
+    }
+
+    fun markAsCompleted() {
+        val state = successState ?: return
+        try {
+            val mangaUpdated = state.manga.toMangaUpdate().copy(
+                status = SManga.COMPLETED.toLong()
+            )
+            screenModelScope.launch {
+                withIOContext {
+                    updateManga.await(mangaUpdated)
+                }
+            }
+        }catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e)
         }
     }
 

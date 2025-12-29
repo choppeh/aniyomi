@@ -83,6 +83,7 @@ import tachiyomi.domain.entries.anime.interactor.SetAnimeEpisodeFlags
 import tachiyomi.domain.entries.anime.interactor.SetAnimeSeasonFlags
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.entries.anime.model.NoSeasonsException
+import tachiyomi.domain.entries.anime.model.toAnimeUpdate
 import tachiyomi.domain.entries.anime.repository.AnimeRepository
 import tachiyomi.domain.entries.applyFilter
 import tachiyomi.domain.items.episode.interactor.GetEpisodesByAnimeId
@@ -300,6 +301,22 @@ class AnimeScreenModel(
             screenModelScope.launch {
                 snackbarHostState.showSnackbar(message = with(context) { e.formattedMessage })
             }
+        }
+    }
+
+    fun markAsCompleted() {
+        val state = successState ?: return
+        try {
+            val animeUpdated = state.anime.toAnimeUpdate().copy(
+                status = SAnime.COMPLETED.toLong()
+            )
+            screenModelScope.launch {
+                withIOContext {
+                    updateAnime.await(animeUpdated)
+                }
+            }
+        }catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e)
         }
     }
 

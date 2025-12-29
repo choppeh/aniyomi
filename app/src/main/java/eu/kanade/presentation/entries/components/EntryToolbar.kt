@@ -34,6 +34,7 @@ fun EntryToolbar(
     navigateUp: () -> Unit,
     onClickFilter: () -> Unit,
     onClickShare: (() -> Unit)?,
+    onMarkAsCompleted: (() -> Unit)?,
     onClickDownload: ((DownloadAction) -> Unit)?,
     onClickEditCategory: (() -> Unit)?,
     onClickRefresh: () -> Unit,
@@ -150,6 +151,14 @@ fun EntryToolbar(
                             AppBar.OverflowAction(
                                 title = stringResource(MR.strings.action_share),
                                 onClick = onClickShare,
+                            ),
+                        )
+                    }
+                    if(onMarkAsCompleted != null) {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.action_mark_as_completed),
+                                onClick = onMarkAsCompleted,
                             ),
                         )
                     }

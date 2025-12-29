@@ -183,6 +183,7 @@ class AnimeScreen(
                     screenModel.source,
                 )
             }.takeIf { isAnimeHttpSource },
+            onMarkAsCompleted = screenModel::markAsCompleted,
             onDownloadActionClicked = screenModel::runDownloadAction.takeIf {
                 !successState.source.isLocalOrStub() && successState.anime.fetchType == FetchType.Episodes
             },

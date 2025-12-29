@@ -136,6 +136,7 @@ fun AnimeScreen(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
+    onMarkAsCompleted: (() -> Unit)?,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
@@ -197,6 +198,7 @@ fun AnimeScreen(
             onSearch = onSearch,
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
+            onMarkAsCompleted = onMarkAsCompleted,
             onDownloadActionClicked = onDownloadActionClicked,
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
@@ -239,6 +241,7 @@ fun AnimeScreen(
             onSearch = onSearch,
             onCoverClicked = onCoverClicked,
             onShareClicked = onShareClicked,
+            onMarkAsCompleted = onMarkAsCompleted,
             onDownloadActionClicked = onDownloadActionClicked,
             onEditCategoryClicked = onEditCategoryClicked,
             onEditIntervalClicked = onEditFetchIntervalClicked,
@@ -292,6 +295,7 @@ private fun AnimeScreenSmallImpl(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
+    onMarkAsCompleted: (() -> Unit)?,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
@@ -378,6 +382,7 @@ private fun AnimeScreenSmallImpl(
                     navigateUp = navigateUp,
                     onClickFilter = onFilterClicked,
                     onClickShare = onShareClicked,
+                    onMarkAsCompleted = onMarkAsCompleted,
                     onClickDownload = onDownloadActionClicked,
                     onClickEditCategory = onEditCategoryClicked,
                     onClickRefresh = onRefresh,
@@ -637,6 +642,7 @@ fun AnimeScreenLargeImpl(
 
     // For top action menu
     onShareClicked: (() -> Unit)?,
+    onMarkAsCompleted: (() -> Unit)?,
     onDownloadActionClicked: ((DownloadAction) -> Unit)?,
     onEditCategoryClicked: (() -> Unit)?,
     onEditIntervalClicked: (() -> Unit)?,
@@ -712,6 +718,7 @@ fun AnimeScreenLargeImpl(
                     navigateUp = navigateUp,
                     onClickFilter = onFilterButtonClicked,
                     onClickShare = onShareClicked,
+                    onMarkAsCompleted = onMarkAsCompleted,
                     onClickDownload = onDownloadActionClicked,
                     onClickEditCategory = onEditCategoryClicked,
                     onClickRefresh = onRefresh,
