@@ -41,6 +41,7 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import kotlin.collections.emptyList
 import kotlin.math.abs
 
 actual class LocalAnimeSource(
@@ -86,7 +87,7 @@ actual class LocalAnimeSource(
             0L
         }
 
-        var animeDirs = fileSystem.getFilesInBaseDirectory()
+        val allAnimeDirs = fileSystem.getFilesInBaseDirectory()
             // Filter out files that are hidden and is not a folder
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
@@ -98,7 +99,9 @@ actual class LocalAnimeSource(
                 } else {
                     it.lastModified() >= lastModifiedLimit
                 }
-            }
+            }.chunked(ANIME_PER_PAGE)
+
+        var animeDirs = allAnimeDirs.getOrElse(page - 1) { emptyList() }
 
         filters.forEach { filter ->
             when (filter) {
@@ -133,7 +136,7 @@ actual class LocalAnimeSource(
             }
             .awaitAll()
 
-        AnimesPage(animes.toList(), false)
+        AnimesPage(animes.toList(), allAnimeDirs.getOrNull(page) != null)
     }
 
     private fun getSAnime(animeDir: String?): SAnime {
@@ -354,7 +357,7 @@ actual class LocalAnimeSource(
     companion object {
         const val ID = 0L
         const val HELP_URL = "https://aniyomi.org/help/guides/local-anime/"
-
+        const val ANIME_PER_PAGE = 15
         private const val DEFAULT_COVER_NAME = "cover.jpg"
         private const val DEFAULT_BACKGROUND_NAME = "background.jpg"
         private const val DEFAULT_THUMBNAIL_NAME = "thumbnail.jpg"

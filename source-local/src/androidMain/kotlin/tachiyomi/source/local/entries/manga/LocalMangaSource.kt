@@ -87,7 +87,7 @@ actual class LocalMangaSource(
             0L
         }
 
-        var mangaDirs = fileSystem.getFilesInBaseDirectory()
+        val allMangaDirs = fileSystem.getFilesInBaseDirectory()
             // Filter out files that are hidden and is not a folder
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
@@ -99,7 +99,9 @@ actual class LocalMangaSource(
                 } else {
                     it.lastModified() >= lastModifiedLimit
                 }
-            }
+            }.chunked(MANGA_PER_PAGE)
+
+        var mangaDirs = allMangaDirs.getOrElse(page - 1) { emptyList() }
 
         filters.forEach { filter ->
             when (filter) {
@@ -139,7 +141,7 @@ actual class LocalMangaSource(
             }
             .awaitAll()
 
-        MangasPage(mangas, false)
+        MangasPage(mangas, allMangaDirs.getOrNull(page) != null)
     }
 
     // Manga details related
@@ -377,7 +379,7 @@ actual class LocalMangaSource(
     companion object {
         const val ID = 0L
         const val HELP_URL = "https://aniyomi.org/help/guides/local-manga/"
-
+        const val MANGA_PER_PAGE = 15
         private val LATEST_THRESHOLD = TimeUnit.MILLISECONDS.convert(7, TimeUnit.DAYS)
     }
 }
