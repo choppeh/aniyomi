@@ -35,6 +35,10 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -103,6 +107,12 @@ class AnimeLibraryScreenModel(
     var activeCategoryIndex: Int by libraryPreferences.lastUsedAnimeCategory().asState(
         screenModelScope,
     )
+
+    /**
+     * Separate scope for heavy I/O operations to avoid Main Thread contention
+     * and ensure smooth UI animations.
+     * */
+    private val scopeIO = CoroutineScope(Dispatchers.IO)
 
     init {
         screenModelScope.launchIO {
@@ -380,26 +390,20 @@ class AnimeLibraryScreenModel(
             getLibraryAnime.subscribe(),
             getAnimelibItemPreferencesFlow(),
             downloadCache.changes,
-        ) { animelibAnimeList, prefs, _ ->
-            animelibAnimeList
-                .map { animelibAnime ->
-                    // Display mode based on user preference: take it from global library setting or category
-                    AnimeLibraryItem(
-                        animelibAnime,
-                        downloadCount = if (prefs.downloadBadge) {
-                            downloadManager.getDownloadCount(animelibAnime.anime).toLong()
-                        } else {
-                            0
-                        },
-                        unseenCount = if (prefs.unseenBadge) animelibAnime.unseenCount else 0,
-                        isLocal = if (prefs.localBadge) animelibAnime.anime.isLocal() else false,
-                        sourceLanguage = if (prefs.languageBadge) {
-                            sourceManager.getOrStub(animelibAnime.anime.source).lang
-                        } else {
-                            ""
-                        },
-                    )
-                }
+        ) { libraryAnimeList, prefs, _ ->
+            val localSource = libraryAnimeList.filter { it.anime.isLocal() }
+
+            // Local anime requires file system I/O to count downloads,
+            // so we process them in parallel to speed up library loading.
+            val executors = localSource.fastMap { libraryAnime ->
+                scopeIO.async { createAnimeLibraryItem(libraryAnime, prefs) }
+            }
+
+            val library = libraryAnimeList
+                .fastFilterNot { it.anime.isLocal() }
+                .map { libraryAnime -> createAnimeLibraryItem(libraryAnime, prefs) }
+
+            (library + executors.awaitAll())
                 .groupBy { it.libraryAnime.category }
         }
 
@@ -413,6 +417,25 @@ class AnimeLibraryScreenModel(
             displayCategories.associateWith { animelibAnime[it.id].orEmpty() }
         }
     }
+
+    private fun createAnimeLibraryItem(
+        animelibAnime: LibraryAnime,
+        prefs: ItemPreferences,
+    ): AnimeLibraryItem = AnimeLibraryItem(
+        animelibAnime,
+        downloadCount = if (prefs.downloadBadge) {
+            downloadManager.getDownloadCount(animelibAnime.anime).toLong()
+        } else {
+            0
+        },
+        unseenCount = if (prefs.unseenBadge) animelibAnime.unseenCount else 0,
+        isLocal = if (prefs.localBadge) animelibAnime.anime.isLocal() else false,
+        sourceLanguage = if (prefs.languageBadge) {
+            sourceManager.getOrStub(animelibAnime.anime.source).lang
+        } else {
+            ""
+        },
+    )
 
     /**
      * Flow of tracking filter preferences
