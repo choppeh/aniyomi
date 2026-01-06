@@ -373,30 +373,17 @@ class MangaLibraryScreenModel(
             getLibraryItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryMangaList, prefs, _ ->
-            libraryMangaList
-                .map { libraryManga ->
-                    // Display mode based on user preference: take it from global library setting or category
-                    scopeIO.async {
-                        MangaLibraryItem(
-                            libraryManga,
-                            downloadCount = if (prefs.downloadBadge) {
-                                 downloadManager.getDownloadCount(libraryManga.manga).toLong()
-                            } else {
-                                0
-                            },
-                            unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
-                            isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
-                            sourceLanguage = if (prefs.languageBadge) {
-                                sourceManager.getOrStub(libraryManga.manga.source).lang
-                            } else {
-                                ""
-                            },
-                        )
-                    }
 
-                }
-                .awaitAll()
-                .groupBy { it.libraryManga.category }
+            val localSource = libraryMangaList.filter { it.manga.isLocal() }
+            val extensionSource = libraryMangaList.filterNot { it.manga.isLocal() }
+
+            val executors = localSource.map { libraryManga ->
+                scopeIO.async { createMangaLibraryItem(libraryManga, prefs) }
+            }
+
+            val library = extensionSource.map { libraryManga -> createMangaLibraryItem(libraryManga, prefs) } + executors.awaitAll()
+
+            library.groupBy { it.libraryManga.category }
         }
 
         return combine(getCategories.subscribe(), libraryMangasFlow) { categories, libraryManga ->
@@ -409,6 +396,25 @@ class MangaLibraryScreenModel(
             displayCategories.associateWith { libraryManga[it.id].orEmpty() }
         }
     }
+
+    private fun createMangaLibraryItem(
+        libraryManga: LibraryManga,
+        prefs: ItemPreferences,
+    ): MangaLibraryItem = MangaLibraryItem(
+        libraryManga,
+        downloadCount = if (prefs.downloadBadge) {
+             downloadManager.getDownloadCount(libraryManga.manga).toLong()
+        } else {
+            0
+        },
+        unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
+        isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
+        sourceLanguage = if (prefs.languageBadge) {
+            sourceManager.getOrStub(libraryManga.manga.source).lang
+        } else {
+            ""
+        },
+    )
 
     /**
      * Flow of tracking filter preferences
