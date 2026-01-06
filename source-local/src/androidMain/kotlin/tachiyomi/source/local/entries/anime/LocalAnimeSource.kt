@@ -10,6 +10,7 @@ import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
+import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.storage.toFFmpegString
 import kotlinx.coroutines.async
@@ -29,6 +30,7 @@ import tachiyomi.core.metadata.tachiyomi.EpisodeDetails
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.items.episode.service.EpisodeRecognition
 import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.source.local.entries.utils.Pageable
 import tachiyomi.source.local.filter.anime.AnimeOrderBy
 import tachiyomi.source.local.image.anime.LocalAnimeBackgroundManager
 import tachiyomi.source.local.image.anime.LocalAnimeCoverManager
@@ -41,7 +43,6 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import kotlin.collections.emptyList
 import kotlin.math.abs
 
 actual class LocalAnimeSource(
@@ -87,7 +88,39 @@ actual class LocalAnimeSource(
             0L
         }
 
-        val allAnimeDirs = fileSystem.getFilesInBaseDirectory()
+        if(page == 1) {
+            cache.clear()
+        }
+
+        val animePage = getAnimeDirPageable(filters, lastModifiedLimit, query).getPage(page)
+
+        // Transform animeDirs to list of SAnime
+        val animes = animePage
+            .map { animeDir ->
+                async {
+                    getSAnime(animeDir.name)
+                }
+            }
+            .awaitAll()
+
+        AnimesPage(animes.toList(), animePage.hasNext)
+    }
+
+    // TODO: create a cache based on SAnime or DTO and use the cache file
+    //  to store the data and the date of the last modification of the local folder
+    private val cache = mutableMapOf<AnimeFilterList, Pageable>()
+
+    private fun getAnimeDirPageable(filters: AnimeFilterList, lastModifiedLimit: Long, query: String, ): Pageable =
+        cache[filters] ?: Pageable(getAnimeDir(lastModifiedLimit, query, filters)).also { cache[filters] = it }
+
+    private var animeDirsCache: List<UniFile>? = null
+
+    private fun getAnimeDir(
+        lastModifiedLimit: Long,
+        query: String,
+        filters: AnimeFilterList,
+    ): List<UniFile> {
+        var animeDirs = animeDirsCache ?: fileSystem.getFilesInBaseDirectory()
             // Filter out files that are hidden and is not a folder
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
@@ -99,9 +132,9 @@ actual class LocalAnimeSource(
                 } else {
                     it.lastModified() >= lastModifiedLimit
                 }
-            }.chunked(ANIME_PER_PAGE)
-
-        var animeDirs = allAnimeDirs.getOrElse(page - 1) { emptyList() }
+            }.also {
+                animeDirsCache = it
+            }
 
         filters.forEach { filter ->
             when (filter) {
@@ -126,17 +159,7 @@ actual class LocalAnimeSource(
                 }
             }
         }
-
-        // Transform animeDirs to list of SAnime
-        val animes = animeDirs
-            .map { animeDir ->
-                async {
-                    getSAnime(animeDir.name)
-                }
-            }
-            .awaitAll()
-
-        AnimesPage(animes.toList(), allAnimeDirs.getOrNull(page) != null)
+        return animeDirs
     }
 
     private fun getSAnime(animeDir: String?): SAnime {
