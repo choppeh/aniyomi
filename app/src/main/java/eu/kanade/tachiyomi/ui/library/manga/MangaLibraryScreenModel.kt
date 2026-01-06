@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -731,6 +732,11 @@ class MangaLibraryScreenModel(
 
     fun closeDialog() {
         mutableState.update { it.copy(dialog = null) }
+    }
+
+    override fun onDispose() {
+        scopeIO.cancel()
+        super.onDispose()
     }
 
     sealed interface Dialog {
