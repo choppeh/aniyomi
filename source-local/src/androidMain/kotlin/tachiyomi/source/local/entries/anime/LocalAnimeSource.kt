@@ -380,7 +380,6 @@ actual class LocalAnimeSource(
     companion object {
         const val ID = 0L
         const val HELP_URL = "https://aniyomi.org/help/guides/local-anime/"
-        const val ANIME_PER_PAGE = 15
         private const val DEFAULT_COVER_NAME = "cover.jpg"
         private const val DEFAULT_BACKGROUND_NAME = "background.jpg"
         private const val DEFAULT_THUMBNAIL_NAME = "thumbnail.jpg"
