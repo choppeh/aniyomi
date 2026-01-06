@@ -410,7 +410,7 @@ class MangaLibraryScreenModel(
     ): MangaLibraryItem = MangaLibraryItem(
         libraryManga,
         downloadCount = if (prefs.downloadBadge) {
-             downloadManager.getDownloadCount(libraryManga.manga).toLong()
+            downloadManager.getDownloadCount(libraryManga.manga).toLong()
         } else {
             0
         },
