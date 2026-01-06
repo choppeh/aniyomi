@@ -105,6 +105,10 @@ class MangaLibraryScreenModel(
         screenModelScope,
     )
 
+    /**
+     * Separate scope for heavy I/O operations to avoid Main Thread contention
+     * and ensure smooth UI animations.
+     * */
     private val scopeIO = CoroutineScope(Dispatchers.IO)
 
     init {
@@ -373,17 +377,20 @@ class MangaLibraryScreenModel(
             getLibraryItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryMangaList, prefs, _ ->
-
             val localSource = libraryMangaList.filter { it.manga.isLocal() }
-            val extensionSource = libraryMangaList.filterNot { it.manga.isLocal() }
 
-            val executors = localSource.map { libraryManga ->
+            // Local manga requires file system I/O to count downloads,
+            // so we process them in parallel to speed up library loading.
+            val executors = localSource.fastMap { libraryManga ->
                 scopeIO.async { createMangaLibraryItem(libraryManga, prefs) }
             }
 
-            val library = extensionSource.map { libraryManga -> createMangaLibraryItem(libraryManga, prefs) } + executors.awaitAll()
+            val library = libraryMangaList
+                .fastFilterNot { it.manga.isLocal() }
+                .map { libraryManga -> createMangaLibraryItem(libraryManga, prefs) }
 
-            library.groupBy { it.libraryManga.category }
+            (library + executors.awaitAll())
+                .groupBy { it.libraryManga.category }
         }
 
         return combine(getCategories.subscribe(), libraryMangasFlow) { categories, libraryManga ->
