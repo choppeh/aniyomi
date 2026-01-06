@@ -33,6 +33,10 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -100,6 +104,12 @@ class MangaLibraryScreenModel(
     var activeCategoryIndex: Int by libraryPreferences.lastUsedMangaCategory().asState(
         screenModelScope,
     )
+
+    /**
+     * Separate scope for heavy I/O operations to avoid Main Thread contention
+     * and ensure smooth UI animations.
+     * */
+    private val scopeIO = CoroutineScope(Dispatchers.IO)
 
     init {
         screenModelScope.launchIO {
@@ -367,25 +377,19 @@ class MangaLibraryScreenModel(
             getLibraryItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryMangaList, prefs, _ ->
-            libraryMangaList
-                .map { libraryManga ->
-                    // Display mode based on user preference: take it from global library setting or category
-                    MangaLibraryItem(
-                        libraryManga,
-                        downloadCount = if (prefs.downloadBadge) {
-                            downloadManager.getDownloadCount(libraryManga.manga).toLong()
-                        } else {
-                            0
-                        },
-                        unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
-                        isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
-                        sourceLanguage = if (prefs.languageBadge) {
-                            sourceManager.getOrStub(libraryManga.manga.source).lang
-                        } else {
-                            ""
-                        },
-                    )
-                }
+            val localSource = libraryMangaList.filter { it.manga.isLocal() }
+
+            // Local manga requires file system I/O to count downloads,
+            // so we process them in parallel to speed up library loading.
+            val executors = localSource.fastMap { libraryManga ->
+                scopeIO.async { createMangaLibraryItem(libraryManga, prefs) }
+            }
+
+            val library = libraryMangaList
+                .fastFilterNot { it.manga.isLocal() }
+                .map { libraryManga -> createMangaLibraryItem(libraryManga, prefs) }
+
+            (library + executors.awaitAll())
                 .groupBy { it.libraryManga.category }
         }
 
@@ -399,6 +403,25 @@ class MangaLibraryScreenModel(
             displayCategories.associateWith { libraryManga[it.id].orEmpty() }
         }
     }
+
+    private fun createMangaLibraryItem(
+        libraryManga: LibraryManga,
+        prefs: ItemPreferences,
+    ): MangaLibraryItem = MangaLibraryItem(
+        libraryManga,
+        downloadCount = if (prefs.downloadBadge) {
+             downloadManager.getDownloadCount(libraryManga.manga).toLong()
+        } else {
+            0
+        },
+        unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
+        isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
+        sourceLanguage = if (prefs.languageBadge) {
+            sourceManager.getOrStub(libraryManga.manga.source).lang
+        } else {
+            ""
+        },
+    )
 
     /**
      * Flow of tracking filter preferences
