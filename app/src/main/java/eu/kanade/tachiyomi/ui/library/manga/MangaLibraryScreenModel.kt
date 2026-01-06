@@ -33,6 +33,10 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -100,6 +104,8 @@ class MangaLibraryScreenModel(
     var activeCategoryIndex: Int by libraryPreferences.lastUsedMangaCategory().asState(
         screenModelScope,
     )
+
+    private val scopeIO = CoroutineScope(Dispatchers.IO)
 
     init {
         screenModelScope.launchIO {
@@ -370,22 +376,26 @@ class MangaLibraryScreenModel(
             libraryMangaList
                 .map { libraryManga ->
                     // Display mode based on user preference: take it from global library setting or category
-                    MangaLibraryItem(
-                        libraryManga,
-                        downloadCount = if (prefs.downloadBadge) {
-                            downloadManager.getDownloadCount(libraryManga.manga).toLong()
-                        } else {
-                            0
-                        },
-                        unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
-                        isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
-                        sourceLanguage = if (prefs.languageBadge) {
-                            sourceManager.getOrStub(libraryManga.manga.source).lang
-                        } else {
-                            ""
-                        },
-                    )
+                    scopeIO.async {
+                        MangaLibraryItem(
+                            libraryManga,
+                            downloadCount = if (prefs.downloadBadge) {
+                                 downloadManager.getDownloadCount(libraryManga.manga).toLong()
+                            } else {
+                                0
+                            },
+                            unreadCount = if (prefs.unreadBadge) libraryManga.unreadCount else 0,
+                            isLocal = if (prefs.localBadge) libraryManga.manga.isLocal() else false,
+                            sourceLanguage = if (prefs.languageBadge) {
+                                sourceManager.getOrStub(libraryManga.manga.source).lang
+                            } else {
+                                ""
+                            },
+                        )
+                    }
+
                 }
+                .awaitAll()
                 .groupBy { it.libraryManga.category }
         }
 
