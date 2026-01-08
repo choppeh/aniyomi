@@ -1,7 +1,6 @@
 package tachiyomi.source.local.entries.anime
 
 import android.content.Context
-import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.UnmeteredSource
@@ -10,14 +9,15 @@ import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
-import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.util.lang.compareToCaseInsensitiveNaturalOrder
 import eu.kanade.tachiyomi.util.storage.toFFmpegString
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.protobuf.ProtoBuf
 import logcat.LogPriority
 import rx.Observable
 import tachiyomi.core.common.i18n.stringResource
@@ -30,7 +30,12 @@ import tachiyomi.core.metadata.tachiyomi.EpisodeDetails
 import tachiyomi.domain.entries.anime.model.Anime
 import tachiyomi.domain.items.episode.service.EpisodeRecognition
 import tachiyomi.i18n.aniyomi.AYMR
+import tachiyomi.source.local.entries.utils.Direction
+import tachiyomi.source.local.entries.utils.Entry
+import tachiyomi.source.local.entries.utils.PageArray
 import tachiyomi.source.local.entries.utils.Pageable
+import tachiyomi.source.local.entries.utils.Snapshot
+import tachiyomi.source.local.entries.utils.UniFileLite
 import tachiyomi.source.local.filter.anime.AnimeOrderBy
 import tachiyomi.source.local.image.anime.LocalAnimeBackgroundManager
 import tachiyomi.source.local.image.anime.LocalAnimeCoverManager
@@ -43,6 +48,7 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
 actual class LocalAnimeSource(
@@ -72,6 +78,19 @@ actual class LocalAnimeSource(
 
     override val supportsLatest = true
 
+    private var snapshot = Snapshot()
+
+    // Caches directory contents in memory to eliminate redundant disk I/O,
+    // using a lightweight UniFileLite snapshot to bypass expensive system
+    // calls to getName() and lastModified() during frequent access.
+    private var fileCacheInMemory = AtomicReference<List<UniFileLite>?>(null)
+
+    private val snapshotFile: File
+        get() = File(context.cacheDir, "local_cache")
+
+    private val memoryDumpFile: File
+        get() = File(context.cacheDir, "local_dump")
+
     // Browse related
     override suspend fun getPopularAnime(page: Int) = getSearchAnime(page, "", PopularFilters)
 
@@ -88,8 +107,8 @@ actual class LocalAnimeSource(
             0L
         }
 
-        if(page == 1) {
-            cache.clear()
+        if (page == 1) {
+            verifyCacheTimeStamp()
         }
 
         val animePage = getAnimeDirPageable(filters, lastModifiedLimit, query).getPage(page)
@@ -106,21 +125,66 @@ actual class LocalAnimeSource(
         AnimesPage(animes.toList(), animePage.hasNext)
     }
 
-    // TODO: create a cache based on SAnime or DTO and use the cache file
-    //  to store the data and the date of the last modification of the local folder
-    private val cache = mutableMapOf<AnimeFilterList, Pageable>()
+    private fun saveSnapshot(direction: Direction, page: Int, mangas: List<SAnime>, mangaPage: PageArray) {
+        val entries = mangas.map { it.toEntry() }
+        snapshot.addSortBy(direction, page, entries, mangaPage.hasNext)
+        updateDiskCache()
+    }
 
-    private fun getAnimeDirPageable(filters: AnimeFilterList, lastModifiedLimit: Long, query: String, ): Pageable =
-        cache[filters] ?: Pageable(getAnimeDir(lastModifiedLimit, query, filters)).also { cache[filters] = it }
+    private fun updateDiskCache() {
+        val bytes = ProtoBuf.encodeToByteArray(snapshot)
+        try {
+            snapshotFile.writeBytes(bytes)
+        } catch (e: Throwable) {
+            logcat(
+                priority = LogPriority.ERROR,
+                throwable = e,
+                message = { "Failed to write disk cache file" },
+            )
+        }
+    }
 
-    private var animeDirsCache: List<UniFile>? = null
+    private fun dumpMemory() {
+        val bytes = ProtoBuf.encodeToByteArray(fileCacheInMemory.get())
+        try {
+            memoryDumpFile.writeBytes(bytes)
+        } catch (e: Throwable) {
+            logcat(
+                priority = LogPriority.ERROR,
+                throwable = e,
+                message = { "Failed to write dump" },
+            )
+        }
+    }
+
+    private fun verifyCacheTimeStamp() {
+        val lastModified = fileSystem.getBaseDirectory()?.lastModified()
+            ?: return snapshotFile.run { delete() }
+
+        val now = System.currentTimeMillis()
+
+        if (lastModified <= snapshot.lastModified && now < snapshot.expiration) {
+            return
+        }
+
+        snapshot = Snapshot(
+            lastModified = lastModified,
+            expiration = now + TimeUnit.HOURS.toMillis(1),
+        )
+        fileCacheInMemory.set(null)
+        memoryDumpFile.delete()
+        updateDiskCache()
+    }
+
+    private fun getAnimeDirPageable(filters: AnimeFilterList, lastModifiedLimit: Long, query: String): Pageable =
+        Pageable(getAnimeDir(lastModifiedLimit, query, filters))
 
     private fun getAnimeDir(
         lastModifiedLimit: Long,
         query: String,
         filters: AnimeFilterList,
-    ): List<UniFile> {
-        var animeDirs = animeDirsCache ?: fileSystem.getFilesInBaseDirectory()
+    ): List<UniFileLite> {
+        var animeDirs = fileCacheInMemory.get() ?: fileSystem.getFilesInBaseDirectory()
             // Filter out files that are hidden and is not a folder
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
@@ -132,26 +196,29 @@ actual class LocalAnimeSource(
                 } else {
                     it.lastModified() >= lastModifiedLimit
                 }
-            }.also {
-                animeDirsCache = it
+            }.let { uniFileList ->
+                uniFileList.map { UniFileLite(it.name.orEmpty(), it.lastModified()) }.also {
+                    fileCacheInMemory.getAndSet(it)
+                    dumpMemory()
+                }
             }
 
         filters.forEach { filter ->
             when (filter) {
                 is AnimeOrderBy.Popular -> {
                     animeDirs = if (filter.state!!.ascending) {
-                        animeDirs.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name.orEmpty() })
+                        animeDirs.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
                     } else {
                         animeDirs.sortedWith(
-                            compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.name.orEmpty() },
+                            compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.name },
                         )
                     }
                 }
                 is AnimeOrderBy.Latest -> {
                     animeDirs = if (filter.state!!.ascending) {
-                        animeDirs.sortedBy(UniFile::lastModified)
+                        animeDirs.sortedBy(UniFileLite::lastModified)
                     } else {
-                        animeDirs.sortedByDescending(UniFile::lastModified)
+                        animeDirs.sortedByDescending(UniFileLite::lastModified)
                     }
                 }
                 else -> {
@@ -390,3 +457,9 @@ actual class LocalAnimeSource(
 fun Anime.isLocal(): Boolean = source == LocalAnimeSource.ID
 
 fun AnimeSource.isLocal(): Boolean = id == LocalAnimeSource.ID
+
+fun SAnime.toEntry() = Entry(
+    title = title,
+    thumbnail = thumbnail_url,
+    url = url,
+)
