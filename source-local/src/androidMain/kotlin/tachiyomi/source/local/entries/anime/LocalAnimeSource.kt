@@ -86,10 +86,10 @@ actual class LocalAnimeSource(
     private var fileCacheInMemory = AtomicReference<List<UniFileLite>?>(null)
 
     private val snapshotFile: File
-        get() = File(context.cacheDir, "local_cache")
+        get() = File(context.cacheDir, "anime_local_cache_v1")
 
     private val memoryDumpFile: File
-        get() = File(context.cacheDir, "local_dump")
+        get() = File(context.cacheDir, "anime_local_dump_v1")
 
     // Browse related
     override suspend fun getPopularAnime(page: Int) = getSearchAnime(page, "", PopularFilters)

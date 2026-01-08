@@ -97,10 +97,10 @@ actual class LocalMangaSource(
     private var fileCacheInMemory = AtomicReference<List<UniFileLite>?>(null)
 
     private val snapshotFile: File
-        get() = File(context.cacheDir, "local_cache")
+        get() = File(context.cacheDir, "manga_local_cache_v1")
 
     private val memoryDumpFile: File
-        get() = File(context.cacheDir, "local_dump")
+        get() = File(context.cacheDir, "manga_local_dump_v1")
 
     init {
         try {
