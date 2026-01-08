@@ -275,7 +275,6 @@ actual class LocalMangaSource(
                         mangaDirs.sortedByDescending(UniFileLite::lastModified)
                     }
                 }
-
                 else -> {
                     /* Do nothing */
                 }
