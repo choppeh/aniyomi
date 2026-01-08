@@ -14,6 +14,7 @@ import eu.kanade.tachiyomi.util.storage.toFFmpegString
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -32,8 +33,11 @@ import tachiyomi.domain.items.episode.service.EpisodeRecognition
 import tachiyomi.i18n.aniyomi.AYMR
 import tachiyomi.source.local.entries.utils.Direction
 import tachiyomi.source.local.entries.utils.Entry
+import tachiyomi.source.local.entries.utils.Latest
+import tachiyomi.source.local.entries.utils.None
 import tachiyomi.source.local.entries.utils.PageArray
 import tachiyomi.source.local.entries.utils.Pageable
+import tachiyomi.source.local.entries.utils.Popular
 import tachiyomi.source.local.entries.utils.Snapshot
 import tachiyomi.source.local.entries.utils.UniFileLite
 import tachiyomi.source.local.filter.anime.AnimeOrderBy
@@ -91,6 +95,27 @@ actual class LocalAnimeSource(
     private val memoryDumpFile: File
         get() = File(context.cacheDir, "anime_local_dump_v1")
 
+    init {
+        try {
+            if (snapshotFile.exists()) {
+                snapshot = snapshotFile.inputStream().use {
+                    ProtoBuf.decodeFromByteArray<Snapshot>(it.readBytes())
+                }
+            }
+
+            if (memoryDumpFile.exists()) {
+                fileCacheInMemory.set(
+                    memoryDumpFile.inputStream().use {
+                        ProtoBuf.decodeFromByteArray<List<UniFileLite>>(it.readBytes())
+                    },
+                )
+            }
+        } catch (_: Exception) {
+            snapshotFile.delete()
+            memoryDumpFile.delete()
+        }
+    }
+
     // Browse related
     override suspend fun getPopularAnime(page: Int) = getSearchAnime(page, "", PopularFilters)
 
@@ -111,10 +136,27 @@ actual class LocalAnimeSource(
             verifyCacheTimeStamp()
         }
 
-        val animePage = getAnimeDirPageable(filters, lastModifiedLimit, query).getPage(page)
+        val direction = when {
+            filters === PopularFilters -> Popular
+            filters === LatestFilters -> Latest
+            else -> None
+        }
+
+        snapshot.getSortBy(direction).get(page)?.let { entryPage ->
+            val animes = entryPage.map {
+                SAnime.create().apply {
+                    title = it.title
+                    thumbnail_url = it.thumbnail
+                    url = it.url
+                }
+            }
+            return@withIOContext AnimesPage(animes, entryPage.hasNext)
+        }
+
+        val pageArray = getAnimeDirPageable(filters, lastModifiedLimit, query).getPage(page)
 
         // Transform animeDirs to list of SAnime
-        val animes = animePage
+        val animes = pageArray
             .map { animeDir ->
                 async {
                     getSAnime(animeDir.name)
@@ -122,7 +164,7 @@ actual class LocalAnimeSource(
             }
             .awaitAll()
 
-        AnimesPage(animes.toList(), animePage.hasNext)
+        AnimesPage(animes.toList(), pageArray.hasNext)
     }
 
     private fun saveSnapshot(direction: Direction, page: Int, mangas: List<SAnime>, mangaPage: PageArray) {
@@ -188,18 +230,21 @@ actual class LocalAnimeSource(
             // Filter out files that are hidden and is not a folder
             .filter { it.isDirectory && !it.name.orEmpty().startsWith('.') }
             .distinctBy { it.name }
+            .let { uniFileList ->
+                uniFileList.map { UniFileLite(it.name.orEmpty(), it.lastModified()) }.also {
+                    fileCacheInMemory.getAndSet(it)
+                    dumpMemory()
+                }
+            }
+
+        animeDirs = animeDirs
             .filter {
                 if (lastModifiedLimit == 0L && query.isBlank()) {
                     true
                 } else if (lastModifiedLimit == 0L) {
-                    it.name.orEmpty().contains(query, ignoreCase = true)
+                    it.name.contains(query, ignoreCase = true)
                 } else {
                     it.lastModified() >= lastModifiedLimit
-                }
-            }.let { uniFileList ->
-                uniFileList.map { UniFileLite(it.name.orEmpty(), it.lastModified()) }.also {
-                    fileCacheInMemory.getAndSet(it)
-                    dumpMemory()
                 }
             }
 
