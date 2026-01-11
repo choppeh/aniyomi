@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -50,12 +51,16 @@ import tachiyomi.domain.entries.manga.model.Manga
 import tachiyomi.domain.items.chapter.model.Chapter
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.domain.storage.service.StorageManager
+import tachiyomi.source.local.entries.manga.LocalMangaSource
+import tachiyomi.source.local.io.ArchiveManga
+import tachiyomi.source.local.io.manga.LocalMangaSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.max
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
-
 /**
  * Cache where we dump the downloads directory from the filesystem. This class is needed because
  * directory checking is expensive and it slows down the app. The cache is invalidated by the time
@@ -97,31 +102,84 @@ class MangaDownloadCache(
     private val diskCacheFile: File
         get() = File(context.cacheDir, "dl_index_cache_v3")
 
+    private val localChapterCountCacheFile: File
+        get() = File(context.cacheDir, "local_chapter_cache_v1")
+
     private val rootDownloadsDirMutex = Mutex()
+    private val rootLocalDirMutex = Mutex()
+
     private var rootDownloadsDir = RootDirectory(storageManager.getDownloadsDirectory())
+
+    private val rootLocalDir = LocalMangaSourceFileSystem(storageManager)
+
+    /*
+     * The Storage Access Framework (SAF) is very slow compared to [import java.io.File], this cache was used to store
+     * the count of local chapters. It is only updated when the manga directory is modified, such as renaming the manga,
+     * adding or removing chapters
+     *
+     * Issue related to SAF: https://issuetracker.google.com/issues/130261278
+     * */
+    private var localChapterCountCache = mutableMapOf<String, ChapterCount>()
 
     init {
         // Attempt to read cache file
         scope.launch {
-            rootDownloadsDirMutex.withLock {
-                try {
-                    if (diskCacheFile.exists()) {
-                        val diskCache = diskCacheFile.inputStream().use {
-                            ProtoBuf.decodeFromByteArray<RootDirectory>(it.readBytes())
-                        }
-                        rootDownloadsDir = diskCache
-                        lastRenew = System.currentTimeMillis()
-                    }
-                } catch (e: Throwable) {
-                    logcat(LogPriority.ERROR, e) { "Failed to initialize from disk cache" }
-                    diskCacheFile.delete()
-                }
-            }
+            loadDownloadCountCacheFile()
+            loadLocalChapterCountCacheFile()
         }
 
         storageManager.changes
             .onEach { invalidateCache() }
             .launchIn(scope)
+    }
+
+    private fun loadDownloadCountCacheFile() {
+        if (!diskCacheFile.exists()) return
+        try {
+            rootDownloadsDir = diskCacheFile.inputStream().use {
+                ProtoBuf.decodeFromByteArray<RootDirectory>(it.readBytes())
+            }
+            lastRenew = System.currentTimeMillis()
+        } catch (e: Throwable) {
+            logcat(LogPriority.ERROR, e) { "Failed to initialize from disk cache" }
+            diskCacheFile.delete()
+        }
+    }
+
+    suspend fun loadLocalChapterCountCacheFile() {
+        if (!localChapterCountCacheFile.exists()) return
+        try {
+            localChapterCountCache = localChapterCountCacheFile.inputStream().use {
+                ProtoBuf.decodeFromByteArray<MutableMap<String, ChapterCount>>(it.readBytes())
+            }
+            invalidateOutdatedLocalCache()
+        } catch (e: Exception) {
+            logcat(LogPriority.ERROR, e) { "Failed to initialize from disk cache" }
+            localChapterCountCacheFile.delete()
+        }
+    }
+
+    /**
+     * Remove cached chapter counts for mangas whose local folders have been modified,
+     * ensuring the cache reflects the current state of the file system.
+     */
+    private suspend fun invalidateOutdatedLocalCache() {
+        rootLocalDirMutex.withLock {
+            val outdated = AtomicReference(mutableSetOf<String>())
+            // SAF is very slow when obtaining metadata such as lastModified, so this should be done async
+            localChapterCountCache.map { (key, value) ->
+                scope.async {
+                    val mangaDir = rootLocalDir.getMangaDirectory(key)
+                    if (mangaDir != null && value.lastModified >= mangaDir.lastModified()) {
+                        return@async
+                    }
+                    outdated.updateAndGet {
+                        it.apply { add(key) }
+                    }
+                }
+            }.awaitAll()
+            outdated.get().forEach(localChapterCountCache::remove)
+        }
     }
 
     /**
@@ -182,6 +240,14 @@ class MangaDownloadCache(
      * @param manga the manga to check.
      */
     fun getDownloadCount(manga: Manga): Int {
+        if (manga.source == LocalMangaSource.ID) {
+            return runBlocking(Dispatchers.IO) {
+                rootLocalDirMutex.withLock {
+                    localChapterCountCache[manga.url]?.count ?: countLocalChapters(manga)
+                }
+            }
+        }
+
         renewCache()
 
         val sourceDir = rootDownloadsDir.sourceDirs[manga.source]
@@ -192,6 +258,17 @@ class MangaDownloadCache(
             }
         }
         return 0
+    }
+
+    private suspend fun countLocalChapters(manga: Manga): Int {
+        val mangaDir = rootLocalDir.getMangaDirectory(manga.url) ?: return 0
+        return rootLocalDir.getFilesInMangaDirectory(manga.url)
+            .map { scope.async { it.isDirectory || ArchiveManga.isSupported(it) } }
+            .awaitAll()
+            .count()
+            .also {
+                localChapterCountCache[manga.url] = ChapterCount(it, mangaDir.lastModified())
+            }
     }
 
     /**
@@ -269,6 +346,12 @@ class MangaDownloadCache(
                 }
             }
         }
+        rootLocalDirMutex.withLock {
+            // Currently, local chapters cannot be removed, but I will add this code to sync the cache
+            if (manga.source == LocalMangaSource.ID) {
+                localChapterCountCache[manga.url]?.count?.dec()
+            }
+        }
 
         notifyChanges()
     }
@@ -291,6 +374,13 @@ class MangaDownloadCache(
                 }
             }
         }
+        rootLocalDirMutex.withLock {
+            if (manga.source == LocalMangaSource.ID) {
+                localChapterCountCache[manga.url]?.apply {
+                    count = max(count - chapters.size, 0)
+                }
+            }
+        }
 
         notifyChanges()
     }
@@ -306,6 +396,11 @@ class MangaDownloadCache(
             val mangaDirName = provider.getMangaDirName(manga.title)
             if (sourceDir.mangaDirs.containsKey(mangaDirName)) {
                 sourceDir.mangaDirs -= mangaDirName
+            }
+        }
+        rootLocalDirMutex.withLock {
+            if (manga.source == LocalMangaSource.ID) {
+                localChapterCountCache.remove(manga.url)
             }
         }
 
@@ -324,6 +419,7 @@ class MangaDownloadCache(
         lastRenew = 0L
         renewalJob?.cancel()
         diskCacheFile.delete()
+        localChapterCountCacheFile.delete()
         renewCache()
     }
 
@@ -425,18 +521,46 @@ class MangaDownloadCache(
         updateDiskCacheJob = scope.launchIO {
             delay(1000)
             ensureActive()
-            val bytes = ProtoBuf.encodeToByteArray(rootDownloadsDir)
-            ensureActive()
-            try {
-                diskCacheFile.writeBytes(bytes)
-            } catch (e: Throwable) {
-                logcat(
-                    priority = LogPriority.ERROR,
-                    throwable = e,
-                    message = { "Failed to write disk cache file" },
-                )
+            rootDownloadsDirMutex.withLock {
+                saveRootDownloadsCacheFile()
+            }
+            rootLocalDirMutex.withLock {
+                saveLocalChapterCountCacheFile()
             }
         }
+    }
+
+    private fun saveRootDownloadsCacheFile() {
+        val bytes = ProtoBuf.encodeToByteArray(rootDownloadsDir)
+        try {
+            diskCacheFile.writeBytes(bytes)
+        } catch (e: Throwable) {
+            logcat(
+                priority = LogPriority.ERROR,
+                throwable = e,
+                message = { "Failed to write disk cache file" },
+            )
+        }
+    }
+
+    fun saveLocalChapterCountCacheFile() {
+        val bytes = ProtoBuf.encodeToByteArray(localChapterCountCache)
+        try {
+            localChapterCountCacheFile.writeBytes(bytes)
+        } catch (e: Throwable) {
+            logcat(
+                priority = LogPriority.ERROR,
+                throwable = e,
+                message = { "Failed to write disk cache file" },
+            )
+        }
+    }
+
+    /**
+     * Force synchronization after loading all manga
+     */
+    fun sync() {
+        updateDiskCache()
     }
 }
 
@@ -490,3 +614,9 @@ private object UniFileAsStringSerializer : KSerializer<UniFile?> {
         }
     }
 }
+
+@Serializable
+private class ChapterCount(
+    var count: Int,
+    val lastModified: Long,
+)

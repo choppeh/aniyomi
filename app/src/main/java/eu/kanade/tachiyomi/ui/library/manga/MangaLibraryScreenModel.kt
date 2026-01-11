@@ -397,6 +397,7 @@ class MangaLibraryScreenModel(
             }
 
             displayCategories.associateWith { libraryManga[it.id].orEmpty() }
+                .also { downloadCache.sync() }
         }
     }
 
