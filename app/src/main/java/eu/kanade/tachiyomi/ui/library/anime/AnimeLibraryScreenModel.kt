@@ -35,8 +35,10 @@ import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.mutate
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
@@ -76,6 +78,7 @@ import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.domain.track.anime.interactor.GetTracksPerAnime
 import tachiyomi.domain.track.anime.model.AnimeTrack
+import tachiyomi.source.local.entries.anime.LocalAnimeSource
 import tachiyomi.source.local.entries.anime.isLocal
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
@@ -392,19 +395,17 @@ class AnimeLibraryScreenModel(
             getAnimelibItemPreferencesFlow(),
             downloadCache.changes,
         ) { libraryAnimeList, prefs, _ ->
-            val localSource = libraryAnimeList.filter { it.anime.isLocal() }
-
-            // Local anime requires file system I/O to count downloads,
-            // so we process them in parallel to speed up library loading.
-            val executors = localSource.fastMap { libraryAnime ->
-                scopeIO.async { createAnimeLibraryItem(libraryAnime, prefs) }
+            val localAnime = libraryAnimeList.filter { it.anime.source == LocalAnimeSource.ID }
+            val remoteAnime = libraryAnimeList.filterNot { it.anime.source == LocalAnimeSource.ID }
+            val localLibraryItems = localAnime.map { libraryManga ->
+                screenModelScope.async(Dispatchers.IO.limitedParallelism(8)) {
+                    createAnimeLibraryItem(libraryManga, prefs)
+                }
             }
-
-            val library = libraryAnimeList
-                .fastFilterNot { it.anime.isLocal() }
-                .map { libraryAnime -> createAnimeLibraryItem(libraryAnime, prefs) }
-
-            (library + executors.awaitAll())
+            val libraryItems = remoteAnime.map { libraryManga ->
+                createAnimeLibraryItem(libraryManga, prefs)
+            }
+            (libraryItems + localLibraryItems.awaitAll())
                 .groupBy { it.libraryAnime.category }
         }
 
@@ -416,6 +417,7 @@ class AnimeLibraryScreenModel(
             }
 
             displayCategories.associateWith { animelibAnime[it.id].orEmpty() }
+                .also { downloadCache.sync() }
         }
     }
 
@@ -424,6 +426,7 @@ class AnimeLibraryScreenModel(
         prefs: ItemPreferences,
     ): AnimeLibraryItem = AnimeLibraryItem(
         animelibAnime,
+        // Display mode based on user preference: take it from global library setting or category
         downloadCount = if (prefs.downloadBadge) {
             downloadManager.getDownloadCount(animelibAnime.anime).toLong()
         } else {
