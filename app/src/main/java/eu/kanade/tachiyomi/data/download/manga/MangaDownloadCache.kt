@@ -93,7 +93,7 @@ class MangaDownloadCache(
      * The last time the cache was refreshed.
      */
     private var lastRenew = 0L
-    private var renewalJobs: List<Job> = emptyList()
+    private val renewalJobs: MutableList<Job> = mutableListOf()
 
     private val _isInitializing = MutableStateFlow(false)
     val isInitializing = _isInitializing
@@ -419,6 +419,7 @@ class MangaDownloadCache(
     fun invalidateCache() {
         lastRenew = 0L
         renewalJobs.forEach(Job::cancel)
+        renewalJobs.clear()
         diskCacheFile.delete()
         localChapterCountCacheFile.delete()
         renewCache()
