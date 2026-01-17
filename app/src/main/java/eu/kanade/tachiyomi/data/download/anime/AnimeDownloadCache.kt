@@ -117,7 +117,7 @@ class AnimeDownloadCache(
 
     /*
      * The Storage Access Framework (SAF) is very slow compared to [import java.io.File], this cache was used to store
-     * the count of local chapters. It is only updated when the manga directory is modified, such as renaming the manga,
+     * the count of local chapters. It is only updated when the anime directory is modified, such as renaming the anime,
      * adding or removing chapters
      *
      * Issue related to SAF: https://issuetracker.google.com/issues/130261278
@@ -521,19 +521,19 @@ class AnimeDownloadCache(
         // if the cache has not been cleared via [SettingsAdvancedScreen]
         if (localEpisodeCountCacheFile.exists()) return@withIOContext
 
-        val episodeCountsByManga = rootLocalDir.getFilesInBaseDirectory()
+        val episodeCountsByAnime = rootLocalDir.getFilesInBaseDirectory()
             .filter { it.isDirectory }
-            .map { mangaDir ->
+            .map { animeDir ->
                 async {
-                    val count = mangaDir.listFiles()
+                    val count = animeDir.listFiles()
                         ?.map { async { it.isDirectory || ArchiveAnime.isSupported(it) } }
                         ?.awaitAll()
                         ?.count { it }
                         ?: 0
 
-                    mangaDir.name!! to EpisodeCount(
+                    animeDir.name!! to EpisodeCount(
                         count,
-                        mangaDir.lastModified(),
+                        animeDir.lastModified(),
                     )
                 }
             }
@@ -541,7 +541,7 @@ class AnimeDownloadCache(
             .toMap()
 
         rootLocalDirMutex.withLock {
-            localEpisodeCountCache += episodeCountsByManga
+            localEpisodeCountCache += episodeCountsByAnime
         }
     }
 
@@ -623,7 +623,7 @@ private class SourceDirectory(
 )
 
 /**
- * Class to store the files under a manga directory.
+ * Class to store the files under a anime directory.
  */
 @Serializable
 private class AnimeDirectory(
