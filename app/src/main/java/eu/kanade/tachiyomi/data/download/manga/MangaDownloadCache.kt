@@ -3,7 +3,6 @@ package eu.kanade.tachiyomi.data.download.manga
 import android.app.Application
 import android.content.Context
 import androidx.core.net.toUri
-import com.google.common.io.MoreFiles.listFiles
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.extension.manga.MangaExtensionManager
 import eu.kanade.tachiyomi.source.MangaSource
@@ -27,6 +26,7 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -47,6 +47,7 @@ import tachiyomi.core.common.storage.extension
 import tachiyomi.core.common.storage.nameWithoutExtension
 import tachiyomi.core.common.util.lang.launchIO
 import tachiyomi.core.common.util.lang.launchNonCancellable
+import tachiyomi.core.common.util.lang.withIOContext
 import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.entries.manga.model.Manga
 import tachiyomi.domain.items.chapter.model.Chapter
@@ -93,7 +94,7 @@ class MangaDownloadCache(
      * The last time the cache was refreshed.
      */
     private var lastRenew = 0L
-    private val renewalJobs: MutableList<Job> = mutableListOf()
+    private var renewalJob: Job? = null
 
     private val _isInitializing = MutableStateFlow(false)
     val isInitializing = _isInitializing
@@ -418,8 +419,7 @@ class MangaDownloadCache(
 
     fun invalidateCache() {
         lastRenew = 0L
-        renewalJobs.forEach(Job::cancel)
-        renewalJobs.clear()
+        renewalJob?.cancel()
         diskCacheFile.delete()
         localChapterCountCacheFile.delete()
         renewCache()
@@ -430,98 +430,24 @@ class MangaDownloadCache(
      */
     private fun renewCache() {
         // Avoid renewing cache if in the process nor too often
-        if (lastRenew + renewInterval >= System.currentTimeMillis() || renewalJobs.any { it.isActive }) {
+        if (lastRenew + renewInterval >= System.currentTimeMillis() || renewalJob?.isActive == true) {
             return
         }
 
-        renewalJobs += scope.launchIO {
-            // if the cache has not been cleared via [SettingsAdvancedScreen]
-            if (localChapterCountCacheFile.exists()) return@launchIO
-
-            val chapterCountsByManga = rootLocalDir.getFilesInBaseDirectory()
-                .filter { it.isDirectory }
-                .map { mangaDir ->
-                    async {
-                        val count = mangaDir.listFiles()
-                            ?.map { async { it.isDirectory || ArchiveManga.isSupported(it) } }
-                            ?.awaitAll()
-                            ?.count { it }
-                            ?: 0
-
-                        mangaDir.name!! to ChapterCount(
-                            count,
-                            mangaDir.lastModified(),
-                        )
-                    }
-                }
-                .awaitAll()
-                .toMap()
-
-            rootLocalDirMutex.withLock {
-                localChapterCountCache += chapterCountsByManga
-            }
-        }
-
-        renewalJobs += scope.launchIO {
+        renewalJob = scope.launchIO {
             if (lastRenew == 0L) {
                 _isInitializing.emit(true)
             }
-
-            // Try to wait until extensions and sources have loaded
-            var sources = emptyList<MangaSource>()
-            withTimeoutOrNull(30.seconds) {
-                extensionManager.isInitialized.first { it }
-                sourceManager.isInitialized.first { it }
-
-                sources = getSources()
+            try {
+                joinAll(
+                    launch { renewLocalChapterCount() },
+                    launch { renewDownloadsCache() },
+                )
+            } finally {
+                _isInitializing.emit(false)
             }
-
-            val sourceMap = sources.associate { provider.getSourceDirName(it).lowercase() to it.id }
-
-            rootDownloadsDirMutex.withLock {
-                val updatedRootDir = RootDirectory(storageManager.getDownloadsDirectory())
-
-                updatedRootDir.sourceDirs = updatedRootDir.dir?.listFiles().orEmpty()
-                    .filter { it.isDirectory && !it.name.isNullOrBlank() }
-                    .mapNotNull { dir ->
-                        val sourceId = sourceMap[dir.name!!.lowercase()]
-                        sourceId?.let { it to SourceDirectory(dir) }
-                    }
-                    .toMap()
-
-                updatedRootDir.sourceDirs.values.map { sourceDir ->
-                    async {
-                        sourceDir.mangaDirs = sourceDir.dir?.listFiles().orEmpty()
-                            .filter { it.isDirectory && !it.name.isNullOrBlank() }
-                            .associate { it.name!! to MangaDirectory(it) }
-                        sourceDir.mangaDirs.values.forEach { mangaDir ->
-                            val chapterDirs = mangaDir.dir?.listFiles().orEmpty()
-                                .mapNotNull {
-                                    when {
-                                        // Ignore incomplete downloads
-                                        it.name?.endsWith(MangaDownloader.TMP_DIR_SUFFIX) == true -> null
-                                        // Folder of images
-                                        it.isDirectory -> it.name
-                                        // CBZ files
-                                        it.isFile && it.extension == "cbz" -> it.nameWithoutExtension
-                                        // Anything else is irrelevant
-                                        else -> null
-                                    }
-                                }
-                                .toMutableSet()
-
-                            mangaDir.chapterDirs = chapterDirs
-                        }
-                    }
-                }
-                    .awaitAll()
-
-                rootDownloadsDir = updatedRootDir
-            }
-
-            _isInitializing.emit(false)
-        }.also {
-            it.invokeOnCompletion(onCancelling = true) { exception ->
+        }.apply {
+            invokeOnCompletion(onCancelling = true) { exception ->
                 if (exception != null && exception !is CancellationException) {
                     logcat(LogPriority.ERROR, exception) { "DownloadCache: failed to create cache" }
                 }
@@ -532,6 +458,88 @@ class MangaDownloadCache(
 
         // Mainly to notify the indexing notifier UI
         notifyChanges()
+    }
+
+    private suspend fun renewDownloadsCache() = withIOContext {
+        // Try to wait until extensions and sources have loaded
+        var sources = emptyList<MangaSource>()
+        withTimeoutOrNull(30.seconds) {
+            extensionManager.isInitialized.first { it }
+            sourceManager.isInitialized.first { it }
+
+            sources = getSources()
+        }
+
+        val sourceMap = sources.associate { provider.getSourceDirName(it).lowercase() to it.id }
+
+        rootDownloadsDirMutex.withLock {
+            val updatedRootDir = RootDirectory(storageManager.getDownloadsDirectory())
+
+            updatedRootDir.sourceDirs = updatedRootDir.dir?.listFiles().orEmpty()
+                .filter { it.isDirectory && !it.name.isNullOrBlank() }
+                .mapNotNull { dir ->
+                    val sourceId = sourceMap[dir.name!!.lowercase()]
+                    sourceId?.let { it to SourceDirectory(dir) }
+                }
+                .toMap()
+
+            updatedRootDir.sourceDirs.values.map { sourceDir ->
+                async {
+                    sourceDir.mangaDirs = sourceDir.dir?.listFiles().orEmpty()
+                        .filter { it.isDirectory && !it.name.isNullOrBlank() }
+                        .associate { it.name!! to MangaDirectory(it) }
+                    sourceDir.mangaDirs.values.forEach { mangaDir ->
+                        val chapterDirs = mangaDir.dir?.listFiles().orEmpty()
+                            .mapNotNull {
+                                when {
+                                    // Ignore incomplete downloads
+                                    it.name?.endsWith(MangaDownloader.TMP_DIR_SUFFIX) == true -> null
+                                    // Folder of images
+                                    it.isDirectory -> it.name
+                                    // CBZ files
+                                    it.isFile && it.extension == "cbz" -> it.nameWithoutExtension
+                                    // Anything else is irrelevant
+                                    else -> null
+                                }
+                            }
+                            .toMutableSet()
+
+                        mangaDir.chapterDirs = chapterDirs
+                    }
+                }
+            }
+                .awaitAll()
+
+            rootDownloadsDir = updatedRootDir
+        }
+    }
+
+    private suspend fun renewLocalChapterCount() = withIOContext {
+        // if the cache has not been cleared via [SettingsAdvancedScreen]
+        if (localChapterCountCacheFile.exists()) return@withIOContext
+
+        val chapterCountsByManga = rootLocalDir.getFilesInBaseDirectory()
+            .filter { it.isDirectory }
+            .map { mangaDir ->
+                async {
+                    val count = mangaDir.listFiles()
+                        ?.map { async { ArchiveManga.isSupported(it) || it.isDirectory } }
+                        ?.awaitAll()
+                        ?.count { it }
+                        ?: 0
+
+                    mangaDir.name!! to ChapterCount(
+                        count,
+                        mangaDir.lastModified(),
+                    )
+                }
+            }
+            .awaitAll()
+            .toMap()
+
+        rootLocalDirMutex.withLock {
+            localChapterCountCache += chapterCountsByManga
+        }
     }
 
     private fun getSources(): List<MangaSource> {
