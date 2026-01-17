@@ -226,12 +226,7 @@ class AnimeDownloadManager(
      * @param anime the anime to check.
      */
     fun getDownloadCount(anime: Anime): Int {
-        return if (anime.source == LocalAnimeSource.ID) {
-            LocalAnimeSourceFileSystem(storageManager).getFilesInAnimeDirectory(anime.url)
-                .count { ArchiveAnime.isSupported(it) }
-        } else {
-            cache.getDownloadCount(anime)
-        }
+        return cache.getDownloadCount(anime)
     }
 
     /**

@@ -3,6 +3,7 @@ package eu.kanade.tachiyomi.data.download.manga
 import android.app.Application
 import android.content.Context
 import androidx.core.net.toUri
+import com.google.common.io.MoreFiles.listFiles
 import com.hippo.unifile.UniFile
 import eu.kanade.tachiyomi.extension.manga.MangaExtensionManager
 import eu.kanade.tachiyomi.source.MangaSource
@@ -75,7 +76,7 @@ class MangaDownloadCache(
     private val storageManager: StorageManager = Injekt.get(),
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(10))
 
     private val _changes: Channel<Unit> = Channel(Channel.UNLIMITED)
     val changes = _changes.receiveAsFlow()
@@ -92,7 +93,7 @@ class MangaDownloadCache(
      * The last time the cache was refreshed.
      */
     private var lastRenew = 0L
-    private var renewalJob: Job? = null
+    private var renewalJobs: List<Job> = emptyList()
 
     private val _isInitializing = MutableStateFlow(false)
     val isInitializing = _isInitializing
@@ -146,7 +147,7 @@ class MangaDownloadCache(
         }
     }
 
-    suspend fun loadLocalChapterCountCacheFile() {
+    private suspend fun loadLocalChapterCountCacheFile() {
         if (!localChapterCountCacheFile.exists()) return
         try {
             localChapterCountCache = localChapterCountCacheFile.inputStream().use {
@@ -265,7 +266,7 @@ class MangaDownloadCache(
         return rootLocalDir.getFilesInMangaDirectory(manga.url)
             .map { scope.async { it.isDirectory || ArchiveManga.isSupported(it) } }
             .awaitAll()
-            .count()
+            .count { it }
             .also {
                 localChapterCountCache[manga.url] = ChapterCount(it, mangaDir.lastModified())
             }
@@ -417,7 +418,7 @@ class MangaDownloadCache(
 
     fun invalidateCache() {
         lastRenew = 0L
-        renewalJob?.cancel()
+        renewalJobs.forEach(Job::cancel)
         diskCacheFile.delete()
         localChapterCountCacheFile.delete()
         renewCache()
@@ -428,11 +429,39 @@ class MangaDownloadCache(
      */
     private fun renewCache() {
         // Avoid renewing cache if in the process nor too often
-        if (lastRenew + renewInterval >= System.currentTimeMillis() || renewalJob?.isActive == true) {
+        if (lastRenew + renewInterval >= System.currentTimeMillis() || renewalJobs.any { it.isActive }) {
             return
         }
 
-        renewalJob = scope.launchIO {
+        renewalJobs += scope.launchIO {
+            // if the cache has not been cleared via [SettingsAdvancedScreen]
+            if(localChapterCountCacheFile.exists()) return@launchIO
+
+            val chapterCountsByManga = rootLocalDir.getFilesInBaseDirectory()
+                .filter { it.isDirectory }
+                .map { mangaDir ->
+                    async {
+                        val count = mangaDir.listFiles()
+                            ?.map { async { it.isDirectory || ArchiveManga.isSupported(it) } }
+                            ?.awaitAll()
+                            ?.count { it }
+                            ?: 0
+
+                        mangaDir.name!! to ChapterCount(
+                            count,
+                            mangaDir.lastModified()
+                        )
+                    }
+                }
+                .awaitAll()
+                .toMap()
+
+            rootLocalDirMutex.withLock {
+                localChapterCountCache += chapterCountsByManga
+            }
+        }
+
+        renewalJobs += scope.launchIO {
             if (lastRenew == 0L) {
                 _isInitializing.emit(true)
             }
@@ -521,12 +550,8 @@ class MangaDownloadCache(
         updateDiskCacheJob = scope.launchIO {
             delay(1000)
             ensureActive()
-            rootDownloadsDirMutex.withLock {
-                saveRootDownloadsCacheFile()
-            }
-            rootLocalDirMutex.withLock {
-                saveLocalChapterCountCacheFile()
-            }
+            rootDownloadsDirMutex.withLock { saveRootDownloadsCacheFile() }
+            rootLocalDirMutex.withLock { saveLocalChapterCountCacheFile() }
         }
     }
 
