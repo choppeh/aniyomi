@@ -435,7 +435,7 @@ class MangaDownloadCache(
 
         renewalJobs += scope.launchIO {
             // if the cache has not been cleared via [SettingsAdvancedScreen]
-            if(localChapterCountCacheFile.exists()) return@launchIO
+            if (localChapterCountCacheFile.exists()) return@launchIO
 
             val chapterCountsByManga = rootLocalDir.getFilesInBaseDirectory()
                 .filter { it.isDirectory }
@@ -449,7 +449,7 @@ class MangaDownloadCache(
 
                         mangaDir.name!! to ChapterCount(
                             count,
-                            mangaDir.lastModified()
+                            mangaDir.lastModified(),
                         )
                     }
                 }

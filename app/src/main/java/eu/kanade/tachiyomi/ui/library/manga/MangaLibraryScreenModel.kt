@@ -48,8 +48,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import tachiyomi.core.common.preference.CheckboxState
 import tachiyomi.core.common.preference.TriState
 import tachiyomi.core.common.util.lang.compareToWithCollator
@@ -376,7 +374,7 @@ class MangaLibraryScreenModel(
             val localManga = libraryMangaList.filter { it.manga.source == LocalMangaSource.ID }
             val remoteManga = libraryMangaList.filterNot { it.manga.source == LocalMangaSource.ID }
 
-            val localLibraryItems = localManga.map {libraryManga ->
+            val localLibraryItems = localManga.map { libraryManga ->
                 screenModelScope.async(Dispatchers.IO.limitedParallelism(8)) {
                     createMangaLibraryItem(libraryManga, prefs)
                 }

@@ -435,7 +435,7 @@ class AnimeDownloadCache(
 
         renewalJobs += scope.launchIO {
             // if the cache has not been cleared via [SettingsAdvancedScreen]
-            if(localEpisodeCountCacheFile.exists()) return@launchIO
+            if (localEpisodeCountCacheFile.exists()) return@launchIO
 
             val episodeCountsByManga = rootLocalDir.getFilesInBaseDirectory()
                 .filter { it.isDirectory }
@@ -449,7 +449,7 @@ class AnimeDownloadCache(
 
                         mangaDir.name!! to EpisodeCount(
                             count,
-                            mangaDir.lastModified()
+                            mangaDir.lastModified(),
                         )
                     }
                 }
