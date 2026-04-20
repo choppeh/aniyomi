@@ -190,6 +190,8 @@ object SettingsAdvancedScreen : SearchableSettings {
         val context = LocalContext.current
         val navigator = LocalNavigator.currentOrThrow
 
+        val scope = rememberCoroutineScope()
+
         return Preference.PreferenceGroup(
             title = stringResource(MR.strings.label_data),
             preferenceItems = persistentListOf(
@@ -197,9 +199,11 @@ object SettingsAdvancedScreen : SearchableSettings {
                     title = stringResource(MR.strings.pref_invalidate_download_cache),
                     subtitle = stringResource(AYMR.strings.pref_invalidate_download_cache_summary),
                     onClick = {
-                        Injekt.get<MangaDownloadCache>().invalidateCache()
-                        Injekt.get<AnimeDownloadCache>().invalidateCache()
-                        context.toast(MR.strings.download_cache_invalidated)
+                        scope.launch {
+                            Injekt.get<MangaDownloadCache>().invalidateCache()
+                            Injekt.get<AnimeDownloadCache>().invalidateCache()
+                            context.toast(MR.strings.download_cache_invalidated)
+                        }
                     },
                 ),
                 Preference.PreferenceItem.TextPreference(

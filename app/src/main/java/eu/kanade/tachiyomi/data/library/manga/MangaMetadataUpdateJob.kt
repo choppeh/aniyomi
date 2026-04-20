@@ -94,12 +94,12 @@ class MangaMetadataUpdateJob(private val context: Context, workerParams: WorkerP
      * Adds list of manga to be updated.
      */
     private suspend fun addMangaToQueue() {
-        mangaToUpdate = getLibraryManga.await()
-        notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
+//        mangaToUpdate = getLibraryManga.await()
+//        notifier.showQueueSizeWarningNotificationIfNeeded(mangaToUpdate)
     }
 
     private suspend fun updateMetadata() {
-        val semaphore = Semaphore(5)
+        val semaphore = Semaphore(10)
         val progressCount = AtomicInteger(0)
         val currentlyUpdatingManga = CopyOnWriteArrayList<Manga>()
 

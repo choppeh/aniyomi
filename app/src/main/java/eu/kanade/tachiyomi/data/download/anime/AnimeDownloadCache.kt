@@ -89,7 +89,7 @@ class AnimeDownloadCache(
      * The interval after which this cache should be invalidated. 1 hour shouldn't cause major
      * issues, as the cache is only used for UI feedback.
      */
-    private val renewInterval = 1.hours.inWholeMilliseconds
+    private val renewInterval = 72.hours.inWholeMilliseconds
 
     /**
      * The last time the cache was refreshed.

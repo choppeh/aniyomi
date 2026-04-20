@@ -3,16 +3,17 @@ package eu.kanade.tachiyomi.data.track.myanimelist.dto
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class MALSearchResult(
-    val data: List<MALSearchResultNode>,
+data class MALSearchResult<T>(
+    val data: List<MALSearchResultNode<T>>,
+    val paging: MALSearchPaging,
 )
 
 @Serializable
-data class MALSearchResultNode(
-    val node: MALSearchResultItem,
+data class MALSearchResultNode<T>(
+    val node: T,
 )
 
 @Serializable
-data class MALSearchResultItem(
-    val id: Int,
+data class MALSearchPaging(
+    val next: String? = null,
 )

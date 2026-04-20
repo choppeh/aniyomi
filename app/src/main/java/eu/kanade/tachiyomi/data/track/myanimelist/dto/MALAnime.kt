@@ -9,7 +9,7 @@ data class MALAnime(
     val title: String,
     val synopsis: String = "",
     @SerialName("num_episodes")
-    val numEpisodes: Long,
+    val numEpisodes: Long = 0,
     val mean: Double = -1.0,
     @SerialName("main_picture")
     val covers: MALAnimeCovers?,

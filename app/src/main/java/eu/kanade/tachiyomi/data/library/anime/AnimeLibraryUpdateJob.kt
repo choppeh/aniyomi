@@ -246,7 +246,7 @@ class AnimeLibraryUpdateJob(private val context: Context, workerParams: WorkerPa
             }
             .sortedBy { it.anime.title }
 
-        notifier.showQueueSizeWarningNotificationIfNeeded(animeToUpdate)
+//        notifier.showQueueSizeWarningNotificationIfNeeded(animeToUpdate)
 
         if (skippedUpdates.isNotEmpty()) {
             // TODO: surface skipped reasons to user?

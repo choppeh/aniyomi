@@ -98,8 +98,8 @@ class AnimeMetadataUpdateJob(private val context: Context, workerParams: WorkerP
      * Adds list of anime to be updated.
      */
     private suspend fun addAnimeToQueue() {
-        animeToUpdate = getLibraryAnime.await()
-        notifier.showQueueSizeWarningNotificationIfNeeded(animeToUpdate)
+//        animeToUpdate = getLibraryAnime.await()
+//        notifier.showQueueSizeWarningNotificationIfNeeded(animeToUpdate)
     }
 
     private suspend fun updateMetadata() {

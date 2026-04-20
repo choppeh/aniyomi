@@ -205,7 +205,11 @@ object ImageUtil {
      */
     private fun isTallImage(imageSource: BufferedSource): Boolean {
         val options = extractImageOptions(imageSource)
-        return (options.outHeight / options.outWidth) > 3
+        return TallImageSplitCalculator.shouldSplit(
+            imageWidth = options.outWidth,
+            imageHeight = options.outHeight,
+            optimalImageHeight = optimalImageHeight,
+        )
     }
 
     /**

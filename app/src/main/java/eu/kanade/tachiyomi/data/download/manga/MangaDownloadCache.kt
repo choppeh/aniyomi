@@ -13,14 +13,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -77,7 +80,7 @@ class MangaDownloadCache(
     private val storageManager: StorageManager = Injekt.get(),
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(10))
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(15))
 
     private val _changes: Channel<Unit> = Channel(Channel.UNLIMITED)
     val changes = _changes.receiveAsFlow()
@@ -88,7 +91,7 @@ class MangaDownloadCache(
      * The interval after which this cache should be invalidated. 1 hour shouldn't cause major
      * issues, as the cache is only used for UI feedback.
      */
-    private val renewInterval = 1.hours.inWholeMilliseconds
+    private val renewInterval = 72.hours.inWholeMilliseconds
 
     /**
      * The last time the cache was refreshed.
@@ -128,6 +131,13 @@ class MangaDownloadCache(
         scope.launch {
             loadDownloadCountCacheFile()
             loadLocalChapterCountCacheFile()
+
+            sourceManager.catalogueSources
+                .map { sources -> sources.map { it.id }.toSet() }
+                .distinctUntilChanged()
+                .collect {
+                    restartRenewal()
+                }
         }
 
         storageManager.changes
@@ -166,20 +176,21 @@ class MangaDownloadCache(
      * ensuring the cache reflects the current state of the file system.
      */
     private suspend fun invalidateOutdatedLocalCache() {
-        rootLocalDirMutex.withLock {
-            val outdated = AtomicReference(mutableSetOf<String>())
-            // SAF is very slow when obtaining metadata such as lastModified, so this should be done async
-            localChapterCountCache.map { (key, value) ->
-                scope.async {
-                    val mangaDir = rootLocalDir.getMangaDirectory(key)
-                    if (mangaDir != null && value.lastModified >= mangaDir.lastModified()) {
-                        return@async
-                    }
-                    outdated.updateAndGet {
-                        it.apply { add(key) }
-                    }
+        val outdated = AtomicReference(mutableSetOf<String>())
+        // SAF is very slow when obtaining metadata such as lastModified, so this should be done async
+        localChapterCountCache.map { (key, value) ->
+            scope.async {
+                val mangaDir = rootLocalDir.getMangaDirectory(key)
+                if (mangaDir != null && value.lastModified >= mangaDir.lastModified()) {
+                    return@async
                 }
-            }.awaitAll()
+                outdated.updateAndGet {
+                    it.apply { add(key) }
+                }
+            }
+        }.awaitAll()
+
+        rootLocalDirMutex.withLock {
             outdated.get().forEach(localChapterCountCache::remove)
         }
     }
@@ -417,20 +428,33 @@ class MangaDownloadCache(
         notifyChanges()
     }
 
-    fun invalidateCache() {
+    suspend fun invalidateCache() {
         lastRenew = 0L
-        renewalJob?.cancel()
+        renewalJob?.cancelAndJoin()
         diskCacheFile.delete()
         localChapterCountCacheFile.delete()
+        renewCache(forceRenew = true)
+    }
+
+
+    /**
+     * Safely cancels any in-progress renewal job, resets the last-renew timestamp, and
+     * immediately starts a new renewal, bypassing the time-based throttle.
+     */
+    private fun restartRenewal() {
+        renewalJob?.cancel()
+        diskCacheFile.delete()
         renewCache()
+        lastRenew = 0L
+        renewCache(forceRenew = true)
     }
 
     /**
      * Renews the downloads cache.
      */
-    private fun renewCache() {
+    private fun renewCache(forceRenew: Boolean = false) {
         // Avoid renewing cache if in the process nor too often
-        if (lastRenew + renewInterval >= System.currentTimeMillis() || renewalJob?.isActive == true) {
+        if (!forceRenew && lastRenew + renewInterval >= System.currentTimeMillis() || renewalJob?.isActive == true) {
             return
         }
 
@@ -555,8 +579,9 @@ class MangaDownloadCache(
 
     private var updateDiskCacheJob: Job? = null
     private fun updateDiskCache() {
-        updateDiskCacheJob?.cancel()
+        val previousJob = updateDiskCacheJob
         updateDiskCacheJob = scope.launchIO {
+            previousJob?.cancelAndJoin()
             delay(1000)
             ensureActive()
             rootDownloadsDirMutex.withLock { saveRootDownloadsCacheFile() }

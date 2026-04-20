@@ -192,6 +192,6 @@ class MangaUpdatesApi(
 
     companion object {
         private const val BASE_URL = "https://api.mangaupdates.com"
-        private val CONTENT_TYPE = "application/vnd.api+json".toMediaType()
+        private val CONTENT_TYPE = "application/json".toMediaType()
     }
 }
