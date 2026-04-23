@@ -309,7 +309,9 @@ class MangaCoverFetcher(
                 options = options,
                 coverFileLazy = lazy { coverCache.getCoverFile(data.thumbnailUrl) },
                 customCoverFileLazy = lazy { coverCache.getCustomCoverFile(data.id) },
-                diskCacheKeyLazy = lazy { imageLoader.components.key(data, options)!! },
+                diskCacheKeyLazy = lazy {
+                    imageLoader.components.key(data, options)!!
+                },
                 sourceLazy = lazy { sourceManager.get(data.source) as? HttpSource },
                 callFactoryLazy = callFactoryLazy,
                 imageLoader = imageLoader,

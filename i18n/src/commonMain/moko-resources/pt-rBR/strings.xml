@@ -812,7 +812,7 @@
     <string name="extensionRepo_settings">Repositório de extensões</string>
     <string name="manga_interval_expected_update_null">Esse mangá foi completado, ou não tem uma data de lançamento prevista.</string>
     <string name="pref_flash_duration">Duração do flash</string>
-    <string name="pref_flash_duration_summary">%1$s ms</string>
+    <string name="pref_flash_duration_summary">%1$s ms</string>E
     <string name="pref_flash_page_interval">Flash a cada</string>
     <string name="pref_flash_with">Flash com</string>
     <string name="pref_download_new_unread_chapters_only">Pule o download de capítulos duplicados já lidos</string>
@@ -828,4 +828,9 @@
     <string name="onboarding_permission_crashlytics">Enviar logs de falhas</string>
     <string name="pref_security">Segurança</string>
     <string name="onboarding_permission_analytics">Permitir análise</string>
+    <string name="export_chapters_not_found">Não foram encontrados capítulos; esta entrada não pode ser usada para migração</string>
+    <!-- Export To Local -->
+    <string name="export_to_local_already_exists">O mangá atual já foi exportado para o local. Tem certeza de que deseja exportar?</string>
+    <string name="export_to_local_no_downloads">Não há capítulos baixados para este mangá. Tem certeza de que deseja exportar?</string>
+    <string name="export_to_local_success">Exportado com sucesso para a fonte local</string>
 </resources>

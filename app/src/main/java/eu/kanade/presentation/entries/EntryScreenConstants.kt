@@ -21,3 +21,8 @@ enum class EntryScreenItem {
     ITEM,
     AIRING_TIME,
 }
+
+enum class ExportToLocalReason {
+    ALREADY_EXISTS,
+    NO_DOWNLOADS
+}

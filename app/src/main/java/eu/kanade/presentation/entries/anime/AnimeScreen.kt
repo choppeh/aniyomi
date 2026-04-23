@@ -397,6 +397,7 @@ private fun AnimeScreenSmallImpl(
                     backgroundAlphaProvider = { backgroundAlpha },
                     isManga = false,
                     modifier = Modifier.onSizeChanged { toolbarHeight = it.height },
+                    onClickExportToLocal = {}
                 )
             },
             bottomBar = {
@@ -732,6 +733,7 @@ fun AnimeScreenLargeImpl(
                     titleAlphaProvider = { 1f },
                     backgroundAlphaProvider = { 1f },
                     isManga = false,
+                    onClickExportToLocal = {}
                 )
             },
             bottomBar = {

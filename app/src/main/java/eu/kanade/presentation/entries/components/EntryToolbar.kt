@@ -40,6 +40,7 @@ fun EntryToolbar(
     onClickRefresh: () -> Unit,
     onClickMigrate: (() -> Unit)?,
     onClickSettings: (() -> Unit)?,
+    onClickExportToLocal: (() -> Unit)?,
     // Anime only
     changeAnimeSkipIntro: (() -> Unit)?,
     // For action mode
@@ -152,6 +153,14 @@ fun EntryToolbar(
                                 title = stringResource(MR.strings.action_share),
                                 onClick = onClickShare,
                             ),
+                        )
+                    }
+                    if (onClickExportToLocal != null) {
+                        add(
+                            AppBar.OverflowAction(
+                                title = stringResource(MR.strings.action_export_to_local),
+                                onClick = onClickExportToLocal
+                            )
                         )
                     }
                     if(onMarkAsCompleted != null) {

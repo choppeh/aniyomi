@@ -119,6 +119,7 @@ fun MangaScreen(
     onEditCategoryClicked: (() -> Unit)?,
     onEditFetchIntervalClicked: (() -> Unit)?,
     onMigrateClicked: (() -> Unit)?,
+    onClickExportToLocal: (() -> Unit)?,
 
     // For bottom action menu
     onMultiBookmarkClicked: (List<Chapter>, bookmarked: Boolean) -> Unit,
@@ -182,6 +183,7 @@ fun MangaScreen(
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
             onSettingsClicked = onSettingsClicked,
+            onClickExportToLocal = onClickExportToLocal,
         )
     } else {
         MangaScreenLargeImpl(
@@ -219,6 +221,7 @@ fun MangaScreen(
             onAllChapterSelected = onAllChapterSelected,
             onInvertSelection = onInvertSelection,
             onSettingsClicked = onSettingsClicked,
+            onClickExportToLocal = onClickExportToLocal,
         )
     }
 }
@@ -272,6 +275,7 @@ private fun MangaScreenSmallImpl(
     onChapterSelected: (ChapterList.Item, Boolean, Boolean, Boolean) -> Unit,
     onAllChapterSelected: (Boolean) -> Unit,
     onInvertSelection: () -> Unit,
+    onClickExportToLocal: (() -> Unit)?,
 ) {
     val chapterListState = rememberLazyListState()
 
@@ -321,6 +325,7 @@ private fun MangaScreenSmallImpl(
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
+                onClickExportToLocal = onClickExportToLocal,
                 onClickSettings = onSettingsClicked,
                 changeAnimeSkipIntro = null,
                 actionModeCounter = selectedChapterCount,
@@ -523,6 +528,8 @@ fun MangaScreenLargeImpl(
     onChapterSelected: (ChapterList.Item, Boolean, Boolean, Boolean) -> Unit,
     onAllChapterSelected: (Boolean) -> Unit,
     onInvertSelection: () -> Unit,
+    onClickExportToLocal: (() -> Unit)?,
+
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
@@ -565,6 +572,7 @@ fun MangaScreenLargeImpl(
                 onClickEditCategory = onEditCategoryClicked,
                 onClickRefresh = onRefresh,
                 onClickMigrate = onMigrateClicked,
+                onClickExportToLocal = onClickExportToLocal,
                 onCancelActionMode = { onAllChapterSelected(false) },
                 onClickSettings = onSettingsClicked,
                 changeAnimeSkipIntro = null,

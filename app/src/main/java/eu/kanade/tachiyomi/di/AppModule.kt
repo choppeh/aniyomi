@@ -23,6 +23,7 @@ import eu.kanade.tachiyomi.data.download.anime.AnimeDownloadProvider
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadCache
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadManager
 import eu.kanade.tachiyomi.data.download.manga.MangaDownloadProvider
+import eu.kanade.tachiyomi.data.export.ExportToLocalImpl
 import eu.kanade.tachiyomi.data.saver.ImageSaver
 import eu.kanade.tachiyomi.data.track.TrackerManager
 import eu.kanade.tachiyomi.extension.anime.AnimeExtensionManager
@@ -49,6 +50,10 @@ import tachiyomi.data.handlers.anime.AndroidAnimeDatabaseHandler
 import tachiyomi.data.handlers.anime.AnimeDatabaseHandler
 import tachiyomi.data.handlers.manga.AndroidMangaDatabaseHandler
 import tachiyomi.data.handlers.manga.MangaDatabaseHandler
+import tachiyomi.domain.export.interactor.ExportMangaToLocal
+import tachiyomi.domain.export.interactor.GetExportDestination
+import tachiyomi.domain.export.interactor.GetExportItems
+import tachiyomi.domain.export.service.ExportService
 import tachiyomi.domain.source.anime.service.AnimeSourceManager
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.domain.storage.service.StorageManager
@@ -224,6 +229,11 @@ class AppModule(val app: Application) : InjektModule {
         addSingletonFactory { LocalEpisodeThumbnailManager(app, get()) }
 
         addSingletonFactory { StorageManager(app, get()) }
+
+        addSingletonFactory<ExportService> { ExportToLocalImpl(app) }
+        addSingletonFactory { ExportMangaToLocal(get()) }
+        addSingletonFactory { GetExportItems(get()) }
+        addSingletonFactory { GetExportDestination(get()) }
 
         addSingletonFactory { ExternalIntents() }
 

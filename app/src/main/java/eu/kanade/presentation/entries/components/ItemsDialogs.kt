@@ -32,6 +32,11 @@ import tachiyomi.presentation.core.i18n.stringResource
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.math.absoluteValue
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.ProgressIndicatorDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.animation.core.animateFloatAsState
+import eu.kanade.presentation.entries.ExportToLocalReason
 
 @Composable
 fun DeleteItemsDialog(
@@ -168,5 +173,75 @@ fun SetIntervalDialog(
                 Text(text = stringResource(MR.strings.action_ok))
             }
         },
+    )
+}
+
+@Composable
+fun ExportToLocalDialog(
+    reason: ExportToLocalReason,
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val textRes = remember(reason) {
+        when (reason) {
+            ExportToLocalReason.ALREADY_EXISTS -> MR.strings.export_to_local_already_exists
+            ExportToLocalReason.NO_DOWNLOADS -> MR.strings.export_to_local_no_downloads
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(MR.strings.action_cancel))
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDismissRequest()
+                    onConfirm()
+                },
+            ) {
+                Text(text = stringResource(MR.strings.action_ok))
+            }
+        },
+        title = {
+            Text(text = stringResource(MR.strings.are_you_sure))
+        },
+        text = {
+            Text(text = stringResource(textRes))
+        },
+    )
+}
+
+@Composable
+fun ExportToLocalProgressDialog(
+    progress: Float,
+    exitMigration: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = {},
+        confirmButton = {
+            TextButton(onClick = exitMigration) {
+                Text(text =  stringResource(MR.strings.export_chapters_not_found))
+            }
+        },
+        text = {
+            if (!progress.isNaN()) {
+                val progressAnimated by animateFloatAsState(
+                    targetValue = progress,
+                    animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
+                    label = "migration_progress",
+                )
+                LinearProgressIndicator(
+                    progress = { progressAnimated },
+                )
+            }
+        },
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
     )
 }
