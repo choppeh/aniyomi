@@ -1,9 +1,11 @@
 package eu.kanade.tachiyomi.data.download.manga
 
 import android.content.Context
+import eu.kanade.domain.entries.manga.interactor.UpdateManga
 import eu.kanade.tachiyomi.data.download.manga.model.MangaDownload
 import eu.kanade.tachiyomi.source.MangaSource
 import eu.kanade.tachiyomi.source.model.Page
+import eu.kanade.tachiyomi.util.removeCovers
 import eu.kanade.tachiyomi.util.size
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow
@@ -23,6 +25,7 @@ import tachiyomi.core.common.util.system.logcat
 import tachiyomi.domain.category.manga.interactor.GetMangaCategories
 import tachiyomi.domain.download.service.DownloadPreferences
 import tachiyomi.domain.entries.manga.model.Manga
+import tachiyomi.domain.entries.manga.model.MangaUpdate
 import tachiyomi.domain.items.chapter.model.Chapter
 import tachiyomi.domain.source.manga.service.MangaSourceManager
 import tachiyomi.domain.storage.service.StorageManager
@@ -31,6 +34,7 @@ import tachiyomi.source.local.entries.manga.LocalMangaSource
 import tachiyomi.source.local.io.manga.LocalMangaSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
+import kotlin.collections.map
 
 /**
  * This class is used to manage chapter downloads in the application. It must be instantiated once
@@ -45,6 +49,7 @@ class MangaDownloadManager(
     private val getCategories: GetMangaCategories = Injekt.get(),
     private val sourceManager: MangaSourceManager = Injekt.get(),
     private val downloadPreferences: DownloadPreferences = Injekt.get(),
+    private val updateManga: UpdateManga = Injekt.get(),
 ) {
 
     /**
@@ -262,6 +267,19 @@ class MangaDownloadManager(
                 return@launchIO
             }
 
+            if (manga.source == LocalMangaSource.ID) {
+                val mangaDir = storageManager.getLocalManga(manga)
+                chapters.forEach { chapter ->
+                    provider.getValidChapterDirNames(chapter.name, chapter.scanlator).forEach {
+                        mangaDir?.findFile(it)?.delete()
+                    }
+                }
+                if(storageManager.isLocalEntryMangaEmpty(manga)) {
+                    deleteManga(manga, source)
+                }
+                return@launchIO
+            }
+
             removeFromDownloadQueue(filteredChapters)
 
             val (mangaDir, chapterDirs) = provider.findChapterDirs(filteredChapters, manga, source)
@@ -284,6 +302,17 @@ class MangaDownloadManager(
      */
     fun deleteManga(manga: Manga, source: MangaSource, removeQueued: Boolean = true) {
         launchIO {
+            if(manga.source == LocalMangaSource.ID) {
+                storageManager.removeLocalManga(manga)
+                cache.removeManga(manga)
+                val toDelete = MangaUpdate(
+                    favorite = false,
+                    id = manga.id,
+                )
+                updateManga.awaitAll(listOf(toDelete))
+                return@launchIO
+            }
+
             if (removeQueued) {
                 downloader.removeFromQueue(manga)
             }

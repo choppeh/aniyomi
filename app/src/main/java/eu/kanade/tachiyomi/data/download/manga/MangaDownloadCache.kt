@@ -362,6 +362,12 @@ class MangaDownloadCache(
         rootLocalDirMutex.withLock {
             // Currently, local chapters cannot be removed, but I will add this code to sync the cache
             if (manga.source == LocalMangaSource.ID) {
+                val localSourceDir = storageManager.getLocalMangaSourceDirectory()
+                val mangaDir = localSourceDir?.findFile(manga.title)
+                provider.getValidChapterDirNames(chapter.name, chapter.scanlator).forEach {
+
+                }
+
                 localChapterCountCache[manga.url]?.count?.dec()
             }
         }
@@ -405,7 +411,7 @@ class MangaDownloadCache(
      */
     suspend fun removeManga(manga: Manga) {
         rootDownloadsDirMutex.withLock {
-            val sourceDir = rootDownloadsDir.sourceDirs[manga.source] ?: return
+            val sourceDir = rootDownloadsDir.sourceDirs[manga.source] ?: return@withLock
             val mangaDirName = provider.getMangaDirName(manga.title)
             if (sourceDir.mangaDirs.containsKey(mangaDirName)) {
                 sourceDir.mangaDirs -= mangaDirName

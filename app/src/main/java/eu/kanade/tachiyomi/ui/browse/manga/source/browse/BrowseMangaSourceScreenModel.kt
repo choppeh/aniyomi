@@ -50,6 +50,7 @@ import tachiyomi.domain.items.chapter.interactor.SetMangaDefaultChapterFlags
 import tachiyomi.domain.library.service.LibraryPreferences
 import tachiyomi.domain.source.manga.interactor.GetRemoteManga
 import tachiyomi.domain.source.manga.service.MangaSourceManager
+import tachiyomi.source.local.entries.manga.LocalMangaSource
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import java.time.Instant

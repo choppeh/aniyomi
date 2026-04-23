@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.ui.library.manga
 
+import android.app.Application
+import android.content.Context
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -78,6 +80,8 @@ import tachiyomi.domain.track.manga.interactor.GetTracksPerManga
 import tachiyomi.domain.track.manga.model.MangaTrack
 import tachiyomi.source.local.entries.manga.LocalMangaSource
 import tachiyomi.source.local.entries.manga.isLocal
+import tachiyomi.source.local.image.manga.LocalMangaCoverManager
+import tachiyomi.source.local.io.manga.LocalMangaSourceFileSystem
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.random.Random
@@ -104,6 +108,14 @@ class MangaLibraryScreenModel(
     private val downloadCache: MangaDownloadCache = Injekt.get(),
     private val trackerManager: TrackerManager = Injekt.get(),
 ) : StateScreenModel<MangaLibraryScreenModel.State>(State()) {
+
+    private val localMangaSource by lazy {
+        LocalMangaSource(
+            Injekt.get<Application>().baseContext,
+            Injekt.get<LocalMangaSourceFileSystem>(),
+            Injekt.get<LocalMangaCoverManager>(),
+        )
+    }
 
     var activeCategoryIndex: Int by libraryPreferences.lastUsedMangaCategory().asState(
         screenModelScope,
@@ -562,8 +574,12 @@ class MangaLibraryScreenModel(
                 updateManga.awaitAll(toDelete)
             }
 
-            if (deleteChapters) {
+            if (deleteChapters || mangaList.any { it.source == LocalMangaSource.ID }) {
                 mangaToDelete.forEach { manga ->
+                    if(manga.source == LocalMangaSource.ID) {
+                        downloadManager.deleteManga(manga, localMangaSource)
+                        return@forEach
+                    }
                     val source = sourceManager.get(manga.source) as? HttpSource
                     if (source != null) {
                         downloadManager.deleteManga(manga, source)

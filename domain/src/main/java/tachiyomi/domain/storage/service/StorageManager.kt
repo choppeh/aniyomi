@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.shareIn
+import tachiyomi.domain.entries.manga.model.Manga
 
 class StorageManager(
     private val context: Context,
@@ -68,6 +69,25 @@ class StorageManager(
 
     fun getLocalMangaSourceDirectory(): UniFile? {
         return baseDir?.createDirectory(LOCAL_SOURCE_PATH)
+    }
+
+    fun getLocalManga(manga: Manga): UniFile? {
+        return getLocalMangaSourceDirectory()?.findFile(manga.title)
+    }
+
+    fun removeLocalManga(manga: Manga): Boolean {
+        return getLocalManga(manga)?.delete() == true
+    }
+
+    fun isLocalEntryMangaEmpty(manga: Manga): Boolean {
+        return getLocalManga(manga)?.listFiles()?.none { file ->
+            setOf("cover", "ComicInfo").any {
+                it.contains(
+                    file.name!!,
+                    ignoreCase = true,
+                )
+            }
+        } == true
     }
 
     fun getLocalAnimeSourceDirectory(): UniFile? {
